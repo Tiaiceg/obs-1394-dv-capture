@@ -33,6 +33,7 @@ struct DvSource {
     std::unique_ptr<dvcap::DshowCapture> capture;
     std::string devicePath;
     bool captureAudio = true;
+    bool active = false;
 
     // Ring of owned buffers so a frame handed to libobs stays valid until
     // it has been consumed. DirectShow callbacks and the OBS async video
@@ -117,10 +118,13 @@ struct DvSource {
         obs_source_output_audio(source, &out);
     }
 
-    void Start() {
-        if (devicePath.empty())
+    void StartCapture() {
+        if (devicePath.empty()) {
+            blog(LOG_WARNING,
+                 "[obs-dv-capture] cannot start: no DV device selected");
             return;
-        Stop();
+        }
+        StopCapture();
         capture = std::make_unique<dvcap::DshowCapture>();
 
         DvSource *self = this;
@@ -144,11 +148,24 @@ struct DvSource {
         }
     }
 
-    void Stop() {
+    void StopCapture() {
         if (capture) {
             capture->Stop();
             capture.reset();
         }
+    }
+
+    // OBS calls Activate when the source is shown (preview/program) and
+    // Deactivate when it is no longer visible. The 1394 DV device is
+    // exclusive, so release it while the source is inactive.
+    void Activate() {
+        active = true;
+        StartCapture();
+    }
+
+    void Deactivate() {
+        active = false;
+        StopCapture();
     }
 };
 
@@ -166,14 +183,30 @@ static void *Create(obs_data_t *settings, obs_source_t *source) {
     s->devicePath = obs_data_get_string(settings, SETTING_DEVICE);
     s->captureAudio = obs_data_get_bool(settings, SETTING_AUDIO);
 
-    s->Start();
+    // Fall back to the first available device if the stored setting is empty
+    // (e.g. the source was created before the camcorder was plugged in).
+    if (s->devicePath.empty()) {
+        auto devices = dvcap::EnumerateDevices();
+        if (!devices.empty())
+            s->devicePath = devices.front().monikerPath;
+    }
+
+    // The actual capture is started in Activate().
     return s;
 }
 
 static void Destroy(void *data) {
     auto *s = static_cast<DvSource *>(data);
-    s->Stop();
+    s->StopCapture();
     delete s;
+}
+
+static void Activate(void *data) {
+    static_cast<DvSource *>(data)->Activate();
+}
+
+static void Deactivate(void *data) {
+    static_cast<DvSource *>(data)->Deactivate();
 }
 
 static void Update(void *data, obs_data_t *settings) {
@@ -185,7 +218,10 @@ static void Update(void *data, obs_data_t *settings) {
     if (device != s->devicePath || wantAudio != s->captureAudio) {
         s->devicePath = device;
         s->captureAudio = wantAudio;
-        s->Start();
+        // Restart only while the source is actually visible; Activate will
+        // pick up the new settings otherwise.
+        if (s->active)
+            s->StartCapture();
     }
 }
 
@@ -244,6 +280,8 @@ static obs_source_info dv_source_info = [] {
     info.get_name = GetName;
     info.create = Create;
     info.destroy = Destroy;
+    info.activate = Activate;
+    info.deactivate = Deactivate;
     info.update = Update;
     info.get_properties = GetProperties;
     info.get_defaults = GetDefaults;

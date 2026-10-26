@@ -3,7 +3,7 @@ obs-dv-capture - installation (Windows)
 
 Prerequisites
 -------------
-1. OBS Studio 28 or newer, 64-bit (Windows 10 / 11).
+1. OBS Studio 31 or newer, 64-bit (Windows 10 / 11).
 2. The camcorder connected over IEEE-1394 (FireWire), powered on, in CAMERA
    mode (or VCR mode for tape playback).
 3. The 1394 host controller must use the LEGACY OHCI driver:
@@ -17,23 +17,28 @@ Prerequisites
 4. Close PotPlayer / AMCap / WinDV before opening the source in OBS:
    a 1394 DV device can only be opened by one program at a time.
 
-Installation
-------------
-Copy the two folders from this package INTO the OBS Studio installation
-folder (typically C:\Program Files\obs-studio), merging when prompted:
+Installation (per-user, no administrator rights) - RECOMMENDED
+---------------------------------------------------------------
+The zip contains a single folder named "obs-dv-capture". Copy that whole
+folder into:
 
-    obs-plugins\64bit\obs-dv-capture.dll
-    data\obs-plugins\obs-dv-capture\locale\en-US.ini
+    %APPDATA%\obs-studio\plugins\
+
+So the result is:
+
+    %APPDATA%\obs-studio\plugins\obs-dv-capture\bin\64bit\obs-dv-capture.dll
+    %APPDATA%\obs-studio\plugins\obs-dv-capture\data\locale\en-US.ini
+
+(Tip: paste %APPDATA%\obs-studio\plugins into the Explorer address bar.
+Create the "plugins" folder if it does not exist.)
+
+Installation (system-wide, needs administrator rights)
+------------------------------------------------------
+Copy the "obs-dv-capture" folder into the OBS installation directory:
+
+    C:\Program Files\obs-studio\plugins\
 
 Then start (or restart) OBS Studio.
-
-Per-user installation (no administrator rights)
-------------------------------------------------
-Copy the same two folders under:
-    %APPDATA%\obs-studio\plugins\obs-dv-capture\
-so that the files land in:
-    %APPDATA%\obs-studio\plugins\obs-dv-capture\obs-plugins\64bit\obs-dv-capture.dll
-    %APPDATA%\obs-studio\plugins\obs-dv-capture\data\obs-plugins\obs-dv-capture\locale\en-US.ini
 
 Usage
 -----
@@ -44,6 +49,9 @@ If the device list changes, use "Refresh device list".
 
 Expected signal: PAL 720x576 25fps YUY2 (or NTSC 720x480 29.97fps),
 embedded 16-bit PCM audio.
+
+The device is released automatically when the source is not visible in any
+active scene (so other capture software can use it).
 
 If the source stays black, check Help -> Log Files -> View Current Log for
 lines starting with "[obs-dv-capture]".

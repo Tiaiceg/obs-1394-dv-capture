@@ -271,7 +271,14 @@ bool DshowCapture::Start(const std::string &monikerPathUtf8,
     // failures. A DV device can take several seconds to initialise.
     for (int i = 0; i < 300 && !running_.load() && lastError_.empty(); ++i)
         Sleep(100);
-    return running_.load();
+    const bool started = running_.load();
+    if (!started && !lastError_.empty()) {
+        // Definite failure: reap the capture thread so the object can be
+        // safely destroyed/restarted.
+        if (thread_.joinable())
+            thread_.join();
+    }
+    return started;
 }
 
 void DshowCapture::Stop() {
@@ -414,6 +421,7 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
         AM_MEDIA_TYPE videoMt;
         ZeroMemory(&videoMt, sizeof(videoMt));
         videoMt.majortype = MEDIATYPE_Video;
+        videoMt.subtype = MEDIASUBTYPE_YUY2;
         videoMt.formattype = FORMAT_VideoInfo;
         videoGrabber_->SetMediaType(&videoMt);
         videoGrabber_->SetBufferSamples(FALSE);
@@ -423,8 +431,12 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
         videoCallback_->videoCb = &userVideoCb_;
         videoGrabber_->SetCallback(videoCallback_, 0);
 
-        videoGrabber_->QueryInterface(PPV(IBaseFilter,
-                                                  &videoGrabberFilter_));
+        hr = videoGrabber_->QueryInterface(
+            PPV(IBaseFilter, &videoGrabberFilter_));
+        if (FAILED(hr)) {
+            fail("Cannot query video grabber filter interface", hr);
+            break;
+        }
         graph_->AddFilter(videoGrabberFilter_, L"DV Video Grabber");
 
         hr = CoCreateInstance(CLSID_NullRenderer, nullptr,
@@ -460,15 +472,19 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
                 connectedVideo.cbFormat >= sizeof(VIDEOINFOHEADER)) {
                 VIDEOINFOHEADER *vih =
                     reinterpret_cast<VIDEOINFOHEADER *>(connectedVideo.pbFormat);
-                videoCallback_->width = vih->bmiHeader.biWidth;
-                videoCallback_->height =
-                    std::abs(vih->bmiHeader.biHeight);
-                videoCallback_->topDown = vih->bmiHeader.biHeight < 0;
-                videoCallback_->averageFrameTime =
-                    vih->AvgTimePerFrame > 0
-                        ? vih->AvgTimePerFrame
-                        : static_cast<REFERENCE_TIME>(400000);
-                videoCallback_->haveFormat = true;
+                // MAKEFOURCC('Y','U','Y','2') == 0x32595559.
+                const DWORD kFourccYUY2 = 0x32595559u;
+                if (vih->bmiHeader.biCompression == kFourccYUY2) {
+                    videoCallback_->width = vih->bmiHeader.biWidth;
+                    videoCallback_->height =
+                        std::abs(vih->bmiHeader.biHeight);
+                    videoCallback_->topDown = vih->bmiHeader.biHeight < 0;
+                    videoCallback_->averageFrameTime =
+                        vih->AvgTimePerFrame > 0
+                            ? vih->AvgTimePerFrame
+                            : static_cast<REFERENCE_TIME>(400000);
+                    videoCallback_->haveFormat = true;
+                }
             }
             if (connectedVideo.pbFormat)
                 CoTaskMemFree(connectedVideo.pbFormat);
@@ -499,8 +515,11 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
                 audioCallback_->audioCb = &userAudioCb_;
                 audioGrabber_->SetCallback(audioCallback_, 0);
 
-                audioGrabber_->QueryInterface(PPV(
-                    IBaseFilter, &audioGrabberFilter_));
+                HRESULT hrQ = audioGrabber_->QueryInterface(
+                    PPV(IBaseFilter, &audioGrabberFilter_));
+                if (FAILED(hrQ)) {
+                    audioOk = false;
+                } else {
                 graph_->AddFilter(audioGrabberFilter_, L"DV Audio Grabber");
 
                 CoCreateInstance(CLSID_NullRenderer, nullptr,
@@ -532,8 +551,9 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
                             WAVEFORMATEX *wf =
                                 reinterpret_cast<WAVEFORMATEX *>(
                                     connectedAudio.pbFormat);
-                            if (wf->wBitsPerSample == 16 ||
-                                wf->wBitsPerSample == 8) {
+                            // DV embedded audio is 16-bit PCM; anything else
+                            // is rejected rather than misinterpreted.
+                            if (wf->wBitsPerSample == 16) {
                                 audioCallback_->channels =
                                     wf->nChannels;
                                 audioCallback_->samplesPerSec =
@@ -550,6 +570,7 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
                             connectedAudio.pUnk->Release();
                     }
                 }
+                }
             }
             // Audio is best-effort: the video stream is the primary deliverable.
             if (!audioOk) {
@@ -562,8 +583,16 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
             }
         }
 
-        graph_->QueryInterface(PPV(IMediaControl, &control_));
-        graph_->QueryInterface(PPV(IMediaEventEx, &mediaEvent_));
+        hr = graph_->QueryInterface(PPV(IMediaControl, &control_));
+        if (FAILED(hr)) {
+            fail("Cannot query media control interface", hr);
+            break;
+        }
+        hr = graph_->QueryInterface(PPV(IMediaEventEx, &mediaEvent_));
+        if (FAILED(hr)) {
+            fail("Cannot query media event interface", hr);
+            break;
+        }
 
         hr = control_->Run();
         if (FAILED(hr)) {
@@ -587,6 +616,7 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
                     SetError("DV device lost or stream aborted",
                              static_cast<HRESULT>(p2));
                     SetEvent(stopEvent);
+                    stopRequested_ = true;
                 }
             }
             WaitForSingleObject(stopEvent, 100);

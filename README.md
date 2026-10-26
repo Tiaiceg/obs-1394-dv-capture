@@ -24,18 +24,19 @@ OBS 内置的“视频采集设备”源在某些 DV 设备上不能正确插入
 ## 功能
 
 - 自动枚举 DirectShow 视频输入设备
-- 自动构建 DV 解码链路（PAL 720×576@25 / NTSC 720×480@29.97 自适应）
+- 自动构建 DV 解码链路（强制协商 YUY2，PAL 720×576@25 / NTSC 720×480@29.97 自适应）
 - 输出 YUY2 画面（BT.601，Limited Range）
 - 内嵌 16bit PCM 音频（32k/44.1k/48k，单/立体声自适应）
-- 设备丢失自动记录日志
-- 无第三方运行时依赖（仅使用 Windows 自带组件，MSVC 运行时静态链接）
+- 源在非活动场景时自动释放独占的 1394 设备（activate/deactivate）
+- 设备丢失自动记录日志并停止采集
+- 无第三方运行时依赖（仅使用 Windows 自带组件）
 
 ## 安装
 
 > 完整图文步骤见压缩包内的 `INSTALL.txt`。
 
 1. 从 [Releases](https://github.com/Tiaiceg/obs-dv-capture/releases) 下载 `obs-dv-capture-*-windows-x64.zip`。
-2. 将压缩包中的 `obs-plugins` 与 `data` 两个文件夹合并到 OBS 安装目录（通常为 `C:\Program Files\obs-studio`）。
+2. 解压得到 `obs-dv-capture` 文件夹，整体复制到 `%APPDATA%\obs-studio\plugins\`（免管理员）或 `C:\Program Files\obs-studio\plugins\`。
 3. 重启 OBS，在“来源”中添加 **DV/1394 FireWire Capture**。
 
 ### 必需的系统准备
@@ -47,16 +48,17 @@ OBS 内置的“视频采集设备”源在某些 DV 设备上不能正确插入
 
 ## 从源码构建
 
-需要 Windows + Visual Studio 2022（含 C++ 桌面开发）、CMake ≥ 3.16。
+需要 Windows + Visual Studio 2022（含 C++ 桌面开发）、CMake ≥ 3.28。
 
 ```bat
 git clone https://github.com/Tiaiceg/obs-dv-capture.git
 cd obs-dv-capture
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release --target obs-dv-capture
+cmake --preset windows-x64
+cmake --build --preset windows-x64 --config RelWithDebInfo
+cmake --install build_x64 --prefix release --config RelWithDebInfo
 ```
 
-首次配置会自动拉取 OBS 30.1.2 源码并只编译 libobs（无需 Qt），产物位于 `build/Release/obs-dv-capture.dll`。
+首次配置会自动拉取 OBS 31.1.1 源码与预编译依赖（仅链接 libobs，不使用 Qt UI）。打包脚本 `.github/scripts/Build-Windows.ps1` 与 `Package-Windows.ps1` 可一键完成构建与压缩。
 
 也可直接在 GitHub Actions 中手动触发 **Build Windows plugin** 工作流，从 Artifacts 下载编译好的 zip。
 
