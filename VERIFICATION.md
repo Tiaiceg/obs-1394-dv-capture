@@ -45,3 +45,11 @@
 5. 录制 30 秒后回放，检查 A/V 同步。
 6. 查看 `帮助 → 日志文件 → 当前日志`，确认无 `[obs-dv-capture]` 警告。
 7. 拔插 1394 线，日志应出现 `DV device lost`；重新插回后重新激活源可恢复。
+
+## 四、真机测试发现与修复
+
+- **rc1 安装路径**：Windows 下 OBS 只扫描 `C:\ProgramData\obs-studio\plugins`（不扫描 `%APPDATA%\Roaming\...`）。已在 README/INSTALL 修正。
+- **rc1 源未注册（已修复，发布 rc2）**：在 OBS 32.1.2 真机日志中发现
+  `Required value 'get_width' for 'dv1394_capture' not found. obs_register_source failed.`
+  原因是源使用 `OBS_SOURCE_VIDEO`（同步源，必须提供 get_width/get_height），但实际通过 `obs_source_output_video()` 异步推送帧。改为 `OBS_SOURCE_ASYNC_VIDEO`（与 OBS 内置视频采集源一致）后，异步源无需 get_width/get_height/video_render。该问题为运行时注册校验，编译与 CI 均无法发现。
+- 同时补充了简体中文 `zh-CN.ini` 界面语言。
