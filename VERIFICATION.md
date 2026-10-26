@@ -72,3 +72,10 @@
 - 完整恢复 rc3 已验证可出画面的 `sourceFilter_ -> RenderStream(Video)` 建图方式，不再预先改动源到 Splitter 的连接。
 - 视频连接成功后通过 `IEnumFilters` 和 `GetClassID` 找到图中已有的 DV Splitter，音频仅从该 Splitter 接出。
 - 修正目标：视频功能不回退，同时保留 phase1rc0 的垂直方向修正与音频诊断。
+
+## 七、phase1rc2 标准 DV 音视频图
+
+- phase1rc1 真机日志中 `audio: find DV Splitter ... 0x80070490` 证明该设备的纯视频图并不存在 DV Splitter，而是源直接连接 DV Video Decoder，因此无法复用不存在的滤镜。
+- 改为显式创建 DV Splitter 和 DV Video Decoder，并使用微软 DV 图参数顺序 `RenderStream(..., source, nullptr, splitter)` 连接交错流。
+- 视频按 `DV Splitter -> DV Video Decoder -> video SampleGrabber -> NullRenderer` 连接；音频按 `DV Splitter -> audio SampleGrabber -> NullRenderer` 连接。
+- phase1rc0 的回归还在于把 Splitter 错放在 intermediate 参数并把 sink 留空；本版使用 splitter 作为 sink，避免只得到 `VFW_S_PARTIAL_RENDER`。
