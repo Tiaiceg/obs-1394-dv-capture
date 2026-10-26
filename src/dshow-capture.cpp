@@ -320,6 +320,32 @@ void DshowCapture::Stop() {
         thread_.join();
 }
 
+static HRESULT FindFilterByClass(IGraphBuilder *graph, REFCLSID clsid,
+                                 IBaseFilter **outFilter) {
+    if (!outFilter)
+        return E_POINTER;
+    *outFilter = nullptr;
+
+    IEnumFilters *enumerator = nullptr;
+    HRESULT hr = graph->EnumFilters(&enumerator);
+    if (FAILED(hr))
+        return hr;
+
+    IBaseFilter *filter = nullptr;
+    while (enumerator->Next(1, &filter, nullptr) == S_OK) {
+        CLSID actual = GUID_NULL;
+        if (SUCCEEDED(filter->GetClassID(&actual)) &&
+            IsEqualGUID(actual, clsid)) {
+            *outFilter = filter;  // Transfer the enumerator's reference.
+            enumerator->Release();
+            return S_OK;
+        }
+        filter->Release();
+    }
+    enumerator->Release();
+    return HRESULT_FROM_WIN32(ERROR_NOT_FOUND);
+}
+
 static IBaseFilter *BindMonikerDevice(IEnumMoniker *enumMoniker,
                                       const std::wstring &targetPath,
                                       IMoniker **outMoniker) {
@@ -449,40 +475,9 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
             break;
         }
 
-        // ----- Shared DV Splitter -----
-        // MSDV exposes an interleaved DV stream, not a separate audio pin.
-        // Create the splitter explicitly so both decoded video and embedded
-        // PCM audio are rendered from the same splitter instance.
-        hr = CoCreateInstance(CLSID_DVSplitter, nullptr,
-                              CLSCTX_INPROC_SERVER,
-                              PPV(IBaseFilter, &dvSplitter_));
-        if (FAILED(hr)) {
-            fail("Cannot create DV Splitter", hr);
-            break;
-        }
-        hr = graph_->AddFilter(dvSplitter_, L"DV Splitter");
-        if (FAILED(hr)) {
-            fail("Cannot add DV Splitter to graph", hr);
-            break;
-        }
-
-        hr = captureGraph_->RenderStream(
-            &PIN_CATEGORY_PREVIEW, &MEDIATYPE_Interleaved, sourceFilter_,
-            dvSplitter_, nullptr);
-        logResult("DV source -> DV Splitter preview RenderStream", hr);
-        if (FAILED(hr)) {
-            hr = captureGraph_->RenderStream(
-                &PIN_CATEGORY_CAPTURE, &MEDIATYPE_Interleaved, sourceFilter_,
-                dvSplitter_, nullptr);
-            logResult("DV source -> DV Splitter capture RenderStream", hr);
-        }
-        if (FAILED(hr)) {
-            fail("Cannot connect DV source to DV Splitter", hr);
-            break;
-        }
-
-        // ----- Video branch: DV Splitter -> DV Video Decoder ->
-        //                    SampleGrabber -> NullRenderer -----
+        // ----- Video branch: keep the known-good rc3 graph unchanged -----
+        // RenderStream inserts the system DV Splitter and DV Video Decoder.
+        // After video is connected, audio reuses that same splitter.
         hr = CoCreateInstance(CLSID_SampleGrabber, nullptr,
                               CLSCTX_INPROC_SERVER,
                               PPV(ISampleGrabber, &videoGrabber_));
@@ -520,12 +515,18 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
         }
         graph_->AddFilter(videoNullRenderer_, L"DV Video Null");
 
-        // Start at the splitter's video output; RenderStream inserts the
-        // system DV Video Decoder before the YUY2 SampleGrabber.
-        hr = captureGraph_->RenderStream(nullptr, &MEDIATYPE_Video,
-                                         dvSplitter_, videoGrabberFilter_,
+        hr = captureGraph_->RenderStream(&PIN_CATEGORY_PREVIEW,
+                                         &MEDIATYPE_Video, sourceFilter_,
+                                         videoGrabberFilter_,
                                          videoNullRenderer_);
-        logResult("DV Splitter -> video RenderStream", hr);
+        logResult("DV source -> video preview RenderStream", hr);
+        if (FAILED(hr)) {
+            hr = captureGraph_->RenderStream(&PIN_CATEGORY_CAPTURE,
+                                             &MEDIATYPE_Video, sourceFilter_,
+                                             videoGrabberFilter_,
+                                             videoNullRenderer_);
+            logResult("DV source -> video capture RenderStream", hr);
+        }
         if (FAILED(hr)) {
             fail("Cannot build DV video graph (DV decoder missing?)", hr);
             break;
@@ -579,6 +580,15 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
         bool audioOk = false;
         if (captureAudio && userAudioCb_) {
             do {
+                // The successful video RenderStream above inserted a DV
+                // Splitter. Reuse it instead of changing the video graph.
+                hr = FindFilterByClass(graph_, CLSID_DVSplitter,
+                                       &dvSplitter_);
+                logResult("audio: find DV Splitter inserted by video graph",
+                          hr);
+                if (FAILED(hr))
+                    break;
+
                 hr = CoCreateInstance(CLSID_SampleGrabber, nullptr,
                                       CLSCTX_INPROC_SERVER,
                                       PPV(ISampleGrabber, &audioGrabber_));

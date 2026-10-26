@@ -65,3 +65,10 @@
 - 显式创建一个共享的 DV Splitter：摄像机先以 `MEDIATYPE_Interleaved` 连接到 Splitter，视频与音频再分别从 Splitter 调用 `RenderStream`。不再错误地从摄像机 MSDV 源直接请求独立音频流。
 - 新增源到 Splitter、Splitter 到视频、Splitter 到音频的 HRESULT 日志，以及已连接的视频 `biHeight`、音频采样率/声道/位深日志。音频失败保持视频可用，但不再静默失败。
 - 真机验收时应看到 `DV Splitter -> audio RenderStream (HRESULT 0x00000000)`、`audio: connected ... 16-bit PCM`，混音器有电平；画面上下方向正常且左右未镜像。
+
+## 六、phase1rc1 视频链路回退修复
+
+- phase1rc0 真机日志显示，前置连接返回 `0x0004027E`（`VFW_S_PARTIAL_RENDER`），随后视频分支返回 `0x80004005`，因此无画面也无法进入音频建图。
+- 完整恢复 rc3 已验证可出画面的 `sourceFilter_ -> RenderStream(Video)` 建图方式，不再预先改动源到 Splitter 的连接。
+- 视频连接成功后通过 `IEnumFilters` 和 `GetClassID` 找到图中已有的 DV Splitter，音频仅从该 Splitter 接出。
+- 修正目标：视频功能不回退，同时保留 phase1rc0 的垂直方向修正与音频诊断。

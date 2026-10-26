@@ -19,7 +19,7 @@ DV 摄像机 (Microsoft DV Camera and VCR)
         └──────► OBS（视频 YUY2 / 音频 16bit PCM）
 ```
 
-OBS 内置的“视频采集设备”源在某些 DV 设备上不能正确插入 DV Splitter / DV Video Decoder，滤镜图只拿到未解码的 DVSD 流，于是表现为黑屏（PotPlayer 能播、OBS 黑屏）。本插件显式创建共享的 DV Splitter，再使用 `ICaptureGraphBuilder2::RenderStream` 分别构建视频与音频分支，强制完成解码后再把帧交给 OBS。
+OBS 内置的“视频采集设备”源在某些 DV 设备上不能正确插入 DV Splitter / DV Video Decoder，滤镜图只拿到未解码的 DVSD 流，于是表现为黑屏（PotPlayer 能播、OBS 黑屏）。本插件使用 `ICaptureGraphBuilder2::RenderStream` 构建视频解码链路，再复用其中自动插入的 DV Splitter 构建独立的音频分支，强制完成解码后再把帧交给 OBS。
 
 ## 功能
 

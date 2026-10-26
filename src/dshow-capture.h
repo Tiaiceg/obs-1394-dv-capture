@@ -4,12 +4,11 @@
  * Minimal DirectShow capture engine for legacy IEEE-1394 (FireWire) DV
  * camcorders exposed through Windows as "Microsoft DV Camera and VCR".
  *
- * The filter graph explicitly creates one system "DV Splitter" and renders
- * both its video and audio outputs with ICaptureGraphBuilder2::RenderStream().
- * The video branch inserts "DV Video Decoder", turning the raw interleaved
- * DVSD stream delivered over 1394 into YUY2 video and separate PCM audio.
- * Rendering audio directly from the camera source cannot work because MSDV
- * exposes interleaved DV rather than a standalone audio pin.
+ * The video graph uses ICaptureGraphBuilder2::RenderStream(), which inserts
+ * the system "DV Splitter" and "DV Video Decoder". The audio branch finds
+ * and reuses that splitter, rendering its PCM output separately. Rendering
+ * audio directly from the camera source cannot work because MSDV exposes
+ * interleaved DV rather than a standalone audio pin.
  */
 
 #pragma once
