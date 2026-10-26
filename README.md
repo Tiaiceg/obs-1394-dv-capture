@@ -36,8 +36,10 @@ OBS 内置的“视频采集设备”源在某些 DV 设备上不能正确插入
 > 完整图文步骤见压缩包内的 `INSTALL.txt`。
 
 1. 从 [Releases](https://github.com/Tiaiceg/obs-dv-capture/releases) 下载 `obs-dv-capture-*-windows-x64.zip`。
-2. 解压得到 `obs-dv-capture` 文件夹，整体复制到 `%APPDATA%\obs-studio\plugins\`（免管理员）或 `C:\Program Files\obs-studio\plugins\`。
-3. 重启 OBS，在“来源”中添加 **DV/1394 FireWire Capture**。
+2. 解压得到 `obs-dv-capture` 文件夹，整体复制到 `C:\ProgramData\obs-studio\plugins\`（地址栏可直接粘贴 `%PROGRAMDATA%\obs-studio\plugins`，没有 plugins 文件夹就新建；可能需要管理员授权）。
+   最终为 `C:\ProgramData\obs-studio\plugins\obs-dv-capture\bin\64bit\obs-dv-capture.dll`。
+   > Windows 下 OBS **不会**扫描 `%APPDATA%\Roaming\obs-studio\plugins`（那是 Linux/macOS 的路径），请用 ProgramData。
+3. 完全退出 OBS（含系统托盘）后重新启动，在“来源”中添加 **DV/1394 FireWire Capture**。
 
 ### 必需的系统准备
 

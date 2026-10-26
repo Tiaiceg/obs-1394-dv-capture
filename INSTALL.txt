@@ -3,7 +3,7 @@ obs-dv-capture - installation (Windows)
 
 Prerequisites
 -------------
-1. OBS Studio 31 or newer, 64-bit (Windows 10 / 11).
+1. OBS Studio 30 or newer, 64-bit (Windows 10 / 11).
 2. The camcorder connected over IEEE-1394 (FireWire), powered on, in CAMERA
    mode (or VCR mode for tape playback).
 3. The 1394 host controller must use the LEGACY OHCI driver:
@@ -17,28 +17,38 @@ Prerequisites
 4. Close PotPlayer / AMCap / WinDV before opening the source in OBS:
    a 1394 DV device can only be opened by one program at a time.
 
-Installation (per-user, no administrator rights) - RECOMMENDED
----------------------------------------------------------------
+Installation - RECOMMENDED (ProgramData)
+----------------------------------------
 The zip contains a single folder named "obs-dv-capture". Copy that whole
 folder into:
 
-    %APPDATA%\obs-studio\plugins\
+    C:\ProgramData\obs-studio\plugins\
+
+Tip: paste this path into the Explorer address bar:
+
+    %PROGRAMDATA%\obs-studio\plugins
+
+Create the "plugins" folder if it does not exist. Copying may prompt for
+administrator permission - click Continue.
 
 So the result is:
 
-    %APPDATA%\obs-studio\plugins\obs-dv-capture\bin\64bit\obs-dv-capture.dll
-    %APPDATA%\obs-studio\plugins\obs-dv-capture\data\locale\en-US.ini
+    C:\ProgramData\obs-studio\plugins\obs-dv-capture\bin\64bit\obs-dv-capture.dll
+    C:\ProgramData\obs-studio\plugins\obs-dv-capture\data\locale\en-US.ini
 
-(Tip: paste %APPDATA%\obs-studio\plugins into the Explorer address bar.
-Create the "plugins" folder if it does not exist.)
+IMPORTANT: on Windows, OBS does NOT scan the %APPDATA%\Roaming\obs-studio\
+plugins folder (that path is used on Linux/macOS). Use ProgramData.
 
-Installation (system-wide, needs administrator rights)
-------------------------------------------------------
-Copy the "obs-dv-capture" folder into the OBS installation directory:
+Legacy layout (only if you cannot use ProgramData)
+---------------------------------------------------
+Copy the files into the OBS installation directory as two separate pieces:
 
-    C:\Program Files\obs-studio\plugins\
+    C:\Program Files\obs-studio\obs-plugins\64bit\obs-dv-capture.dll
+    C:\Program Files\obs-studio\data\obs-plugins\obs-dv-capture\locale\en-US.ini
 
-Then start (or restart) OBS Studio.
+After installing
+----------------
+Fully quit OBS (also check the system tray icon), then start OBS again.
 
 Usage
 -----
