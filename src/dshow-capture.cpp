@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <cctype>
 
 // IID_PPV_ARG is missing from the MinGW-w64 headers (MSVC-only convenience
 // macro), so spell the interface ID out explicitly.
@@ -54,6 +55,23 @@ static void SafeRelease(T *&p) {
 // ---------------------------------------------------------------------------
 // Device enumeration
 // ---------------------------------------------------------------------------
+
+// A real IEEE-1394 DV camcorder is exposed through AV/C with a moniker path
+// like "@device:pnp:\\?\avc#panasonic&mod_0&camcorder&dv#...". Software
+// virtual cameras (Corel, etc.) appear as "@device:sw:{...}". Recognise the
+// former so it is listed (and selected) first.
+static bool IsLikelyFirewireDv(const std::string &path) {
+    std::string lower;
+    lower.reserve(path.size());
+    for (unsigned char c : path)
+        lower.push_back(static_cast<char>(std::tolower(c)));
+    static const char *markers[] = {"avc#", "camcorder", "&dv#", "#dv"};
+    for (const char *m : markers) {
+        if (lower.find(m) != std::string::npos)
+            return true;
+    }
+    return false;
+}
 
 std::vector<DvDevice> EnumerateDevices() {
     std::vector<DvDevice> devices;
@@ -118,6 +136,13 @@ std::vector<DvDevice> EnumerateDevices() {
     SafeRelease(devEnum);
     if (comInited)
         CoUninitialize();
+
+    // Put real 1394 DV camcorders first so the default selection is the
+    // camcorder rather than a software virtual camera.
+    std::stable_partition(devices.begin(), devices.end(),
+                          [](const DvDevice &d) {
+                              return IsLikelyFirewireDv(d.monikerPath);
+                          });
     return devices;
 }
 

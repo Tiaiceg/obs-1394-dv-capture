@@ -16,12 +16,14 @@
 #include <dshow.h>
 #include <unknwn.h>
 
-// {6B652FFF-11FE-4fce-92AD-0266B5D7C78F}
+// {C1F400A0-3F08-11d3-9F0B-006008039E37}
+// NOTE: this is the SampleGrabber *class* id (used with CoCreateInstance).
+// Do not confuse it with IID_ISampleGrabber below.
 static const CLSID CLSID_SampleGrabber = {
-    0x6B652FFF,
-    0x11FE,
-    0x4fce,
-    {0x92, 0xAD, 0x02, 0x66, 0xB5, 0xD7, 0xC7, 0x8F}};
+    0xC1F400A0,
+    0x3F08,
+    0x11d3,
+    {0x9F, 0x0B, 0x00, 0x60, 0x08, 0x03, 0x9E, 0x37}};
 
 // {C1F400A4-3F08-11d3-9F0B-006008039E37}
 static const CLSID CLSID_NullRenderer = {
@@ -30,12 +32,13 @@ static const CLSID CLSID_NullRenderer = {
     0x11d3,
     {0x9F, 0x0B, 0x00, 0x60, 0x08, 0x03, 0x9E, 0x37}};
 
-// {C1F400A0-3F08-11d3-9F0B-006008039E37}
+// {6B652FFF-11FE-4fce-92AD-0266B5D7C78F}
+// This is the ISampleGrabber *interface* id (used with QueryInterface).
 static const IID IID_ISampleGrabber = {
-    0xC1F400A0,
-    0x3F08,
-    0x11d3,
-    {0x9F, 0x0B, 0x00, 0x60, 0x08, 0x03, 0x9E, 0x37}};
+    0x6B652FFF,
+    0x11FE,
+    0x4fce,
+    {0x92, 0xAD, 0x02, 0x66, 0xB5, 0xD7, 0xC7, 0x8F}};
 
 // {0579154A-2B53-4994-B0D0-E773148EFF85}
 static const IID IID_ISampleGrabberCB = {

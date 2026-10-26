@@ -53,3 +53,9 @@
   `Required value 'get_width' for 'dv1394_capture' not found. obs_register_source failed.`
   原因是源使用 `OBS_SOURCE_VIDEO`（同步源，必须提供 get_width/get_height），但实际通过 `obs_source_output_video()` 异步推送帧。改为 `OBS_SOURCE_ASYNC_VIDEO`（与 OBS 内置视频采集源一致）后，异步源无需 get_width/get_height/video_render。该问题为运行时注册校验，编译与 CI 均无法发现。
 - 同时补充了简体中文 `zh-CN.ini` 界面语言。
+- **rc2 采集图无法创建（已修复，发布 rc3）**：rc2 源可添加，但真机日志对松下 DV 设备报
+  `Cannot create video SampleGrabber (HRESULT 0x80040154)`（REGDB_E_CLASSNOTREG，类未注册）。
+  根因是手写的 `qedit-defs.h` 把 **CLSID_SampleGrabber（C1F400A0…）与 IID_ISampleGrabber（6B652FFF…）的 GUID 值填反了**：
+  `CoCreateInstance` 拿接口 IID 去找类，自然找不到。已交换修正，4 个 GUID 经字节序与微软官方资料逐一核对。
+  这同样是运行时错误，编译/链接/CI 均无法发现。
+- 同时让枚举把真正的 1394 DV 设备（moniker 路径含 `avc#`/`camcorder`/`&dv`）排在列表最前，避免默认选中 Corel 等软件虚拟摄像头。
