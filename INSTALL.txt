@@ -1,0 +1,49 @@
+obs-dv-capture - installation (Windows)
+=======================================
+
+Prerequisites
+-------------
+1. OBS Studio 28 or newer, 64-bit (Windows 10 / 11).
+2. The camcorder connected over IEEE-1394 (FireWire), powered on, in CAMERA
+   mode (or VCR mode for tape playback).
+3. The 1394 host controller must use the LEGACY OHCI driver:
+     Device Manager -> IEEE 1394 Bus host controllers
+     -> right-click the Texas Instruments controller -> Update driver
+     -> Browse my computer -> Let me pick
+     -> untick "Show compatible hardware"
+     -> Manufacturer: Microsoft
+     -> "1394 OHCI Compliant Host Controller (Legacy)"
+     -> finish, then REBOOT.
+4. Close PotPlayer / AMCap / WinDV before opening the source in OBS:
+   a 1394 DV device can only be opened by one program at a time.
+
+Installation
+------------
+Copy the two folders from this package INTO the OBS Studio installation
+folder (typically C:\Program Files\obs-studio), merging when prompted:
+
+    obs-plugins\64bit\obs-dv-capture.dll
+    data\obs-plugins\obs-dv-capture\locale\en-US.ini
+
+Then start (or restart) OBS Studio.
+
+Per-user installation (no administrator rights)
+------------------------------------------------
+Copy the same two folders under:
+    %APPDATA%\obs-studio\plugins\obs-dv-capture\
+so that the files land in:
+    %APPDATA%\obs-studio\plugins\obs-dv-capture\obs-plugins\64bit\obs-dv-capture.dll
+    %APPDATA%\obs-studio\plugins\obs-dv-capture\data\obs-plugins\obs-dv-capture\locale\en-US.ini
+
+Usage
+-----
+In OBS: Sources -> Add -> "DV/1394 FireWire Capture".
+Select the camcorder in the "Device" list (usually "Microsoft DV Camera and
+VCR"), keep "Capture embedded DV audio" enabled, then OK.
+If the device list changes, use "Refresh device list".
+
+Expected signal: PAL 720x576 25fps YUY2 (or NTSC 720x480 29.97fps),
+embedded 16-bit PCM audio.
+
+If the source stays black, check Help -> Log Files -> View Current Log for
+lines starting with "[obs-dv-capture]".
