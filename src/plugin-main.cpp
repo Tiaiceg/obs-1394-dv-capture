@@ -288,7 +288,10 @@ static obs_source_info dv_source_info = [] {
     obs_source_info info{};
     info.id = "dv1394_capture";
     info.type = OBS_SOURCE_TYPE_INPUT;
-    info.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_AUDIO |
+    // Frames are pushed asynchronously via obs_source_output_video(), so
+    // this is an ASYNC_VIDEO source (no get_width/get_height/video_render
+    // callbacks are required), matching OBS's built-in video capture source.
+    info.output_flags = OBS_SOURCE_ASYNC_VIDEO | OBS_SOURCE_AUDIO |
                        OBS_SOURCE_DO_NOT_DUPLICATE;
     info.get_name = GetName;
     info.create = Create;
