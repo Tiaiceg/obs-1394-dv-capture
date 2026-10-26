@@ -34,7 +34,7 @@ OBS 内置的“视频采集设备”源在某些 DV 设备上不能正确插入
 
 > 完整图文步骤见压缩包内的 `INSTALL.txt`。
 
-1. 从 [Releases](https://github.com/REPLACE_ME/obs-dv-capture/releases) 下载 `obs-dv-capture-*-windows-x64.zip`。
+1. 从 [Releases](https://github.com/Tiaiceg/obs-dv-capture/releases) 下载 `obs-dv-capture-*-windows-x64.zip`。
 2. 将压缩包中的 `obs-plugins` 与 `data` 两个文件夹合并到 OBS 安装目录（通常为 `C:\Program Files\obs-studio`）。
 3. 重启 OBS，在“来源”中添加 **DV/1394 FireWire Capture**。
 
@@ -50,7 +50,7 @@ OBS 内置的“视频采集设备”源在某些 DV 设备上不能正确插入
 需要 Windows + Visual Studio 2022（含 C++ 桌面开发）、CMake ≥ 3.16。
 
 ```bat
-git clone https://github.com/REPLACE_ME/obs-dv-capture.git
+git clone https://github.com/Tiaiceg/obs-dv-capture.git
 cd obs-dv-capture
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --target obs-dv-capture
