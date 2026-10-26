@@ -4,12 +4,12 @@
  * Minimal DirectShow capture engine for legacy IEEE-1394 (FireWire) DV
  * camcorders exposed through Windows as "Microsoft DV Camera and VCR".
  *
- * The key difference from a generic DirectShow capture source is that the
- * filter graph is built with ICaptureGraphBuilder2::RenderStream(), which
- * automatically inserts the system "DV Splitter" and "DV Video Decoder"
- * filters, turning the raw DVSD (dvsd / DVCPRO) stream delivered over 1394
- * into uncompressed YUY2 video and PCM audio. Generic capture sources that
- * connect pins directly never get a decoded stream and show a black frame.
+ * The filter graph explicitly creates one system "DV Splitter" and renders
+ * both its video and audio outputs with ICaptureGraphBuilder2::RenderStream().
+ * The video branch inserts "DV Video Decoder", turning the raw interleaved
+ * DVSD stream delivered over 1394 into YUY2 video and separate PCM audio.
+ * Rendering audio directly from the camera source cannot work because MSDV
+ * exposes interleaved DV rather than a standalone audio pin.
  */
 
 #pragma once
@@ -53,6 +53,7 @@ struct DvAudioFrame {
 
 using VideoCallback = std::function<void(const DvVideoFrame &)>;
 using AudioCallback = std::function<void(const DvAudioFrame &)>;
+using LogCallback = std::function<void(const std::string &)>;
 
 // Enumerate video input devices (DirectShow video input device category).
 // Safe to call on any thread that has COM initialised; the function performs
@@ -74,7 +75,8 @@ public:
     bool Start(const std::string &monikerPathUtf8,
                bool captureAudio,
                VideoCallback videoCb,
-               AudioCallback audioCb);
+               AudioCallback audioCb,
+               LogCallback logCb = {});
 
     void Stop();
 
@@ -88,6 +90,7 @@ private:
 
     void CaptureThread(std::wstring monikerPath, bool captureAudio);
     void SetError(const char *msg, HRESULT hr);
+    void Log(const std::string &msg);
     void Teardown();
 
     std::thread thread_;
@@ -100,6 +103,7 @@ private:
     IMediaControl *control_ = nullptr;
     IMediaEventEx *mediaEvent_ = nullptr;
     IBaseFilter *sourceFilter_ = nullptr;
+    IBaseFilter *dvSplitter_ = nullptr;
     IBaseFilter *videoGrabberFilter_ = nullptr;
     IBaseFilter *videoNullRenderer_ = nullptr;
     IBaseFilter *audioGrabberFilter_ = nullptr;
@@ -111,6 +115,7 @@ private:
 
     VideoCallback userVideoCb_;
     AudioCallback userAudioCb_;
+    LogCallback logCb_;
     std::string lastError_;
 };
 

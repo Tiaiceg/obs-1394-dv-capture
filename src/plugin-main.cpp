@@ -13,7 +13,7 @@
 
 #include "dshow-capture.h"
 
-#define PLUGIN_NAME "obs-dv-capture"
+#define PLUGIN_NAME "obs-1394-dv-capture"
 #define SETTING_DEVICE "device_id"
 #define SETTING_AUDIO "capture_audio"
 
@@ -92,7 +92,7 @@ struct DvSource {
         if (!loggedFormat) {
             loggedFormat = true;
             blog(LOG_INFO,
-                 "[obs-dv-capture] video: %dx%d YUY2 (BT.601, limited range)",
+                 "[obs-1394-dv-capture] video: %dx%d YUY2 (BT.601, limited range)",
                  frame.width, frame.height);
         }
     }
@@ -129,7 +129,7 @@ struct DvSource {
     void StartCapture() {
         if (devicePath.empty()) {
             blog(LOG_WARNING,
-                 "[obs-dv-capture] cannot start: no DV device selected");
+                 "[obs-1394-dv-capture] cannot start: no DV device selected");
             return;
         }
         StopCapture();
@@ -146,15 +146,18 @@ struct DvSource {
             };
         }
 
+        auto logCb = [](const std::string &message) {
+            blog(LOG_INFO, "[" PLUGIN_NAME "] %s", message.c_str());
+        };
         bool ok = capture->Start(devicePath, captureAudio, videoCb,
-                                 audioCb);
+                                 audioCb, logCb);
         if (ok) {
             blog(LOG_INFO,
-                 "[obs-dv-capture] capture started for '%s' (audio=%s)",
+                 "[obs-1394-dv-capture] capture started for '%s' (audio=%s)",
                  devicePath.c_str(), captureAudio ? "on" : "off");
         } else {
             blog(LOG_WARNING,
-                 "[obs-dv-capture] failed to start DV capture on '%s': %s",
+                 "[obs-1394-dv-capture] failed to start DV capture on '%s': %s",
                  devicePath.c_str(),
                  capture ? capture->lastError().c_str() : "unknown error");
             capture.reset();
@@ -308,7 +311,7 @@ static obs_source_info dv_source_info = [] {
 }  // namespace
 
 bool obs_module_load() {
-    blog(LOG_INFO, "[obs-dv-capture] loaded (IEEE-1394 DV capture source)");
+    blog(LOG_INFO, "[obs-1394-dv-capture] loaded (IEEE-1394 DV capture source)");
     obs_register_source(&dv_source_info);
     return true;
 }

@@ -1,4 +1,4 @@
-obs-dv-capture - installation (Windows)
+obs-1394-dv-capture - installation (Windows)
 =======================================
 
 Prerequisites
@@ -19,7 +19,7 @@ Prerequisites
 
 Installation - RECOMMENDED (ProgramData)
 ----------------------------------------
-The zip contains a single folder named "obs-dv-capture". Copy that whole
+The zip contains a single folder named "obs-1394-dv-capture". Copy that whole
 folder into:
 
     C:\ProgramData\obs-studio\plugins\
@@ -33,8 +33,8 @@ administrator permission - click Continue.
 
 So the result is:
 
-    C:\ProgramData\obs-studio\plugins\obs-dv-capture\bin\64bit\obs-dv-capture.dll
-    C:\ProgramData\obs-studio\plugins\obs-dv-capture\data\locale\en-US.ini
+    C:\ProgramData\obs-studio\plugins\obs-1394-dv-capture\bin\64bit\obs-1394-dv-capture.dll
+    C:\ProgramData\obs-studio\plugins\obs-1394-dv-capture\data\locale\en-US.ini
 
 IMPORTANT: on Windows, OBS does NOT scan the %APPDATA%\Roaming\obs-studio\
 plugins folder (that path is used on Linux/macOS). Use ProgramData.
@@ -43,8 +43,8 @@ Legacy layout (only if you cannot use ProgramData)
 ---------------------------------------------------
 Copy the files into the OBS installation directory as two separate pieces:
 
-    C:\Program Files\obs-studio\obs-plugins\64bit\obs-dv-capture.dll
-    C:\Program Files\obs-studio\data\obs-plugins\obs-dv-capture\locale\en-US.ini
+    C:\Program Files\obs-studio\obs-plugins\64bit\obs-1394-dv-capture.dll
+    C:\Program Files\obs-studio\data\obs-plugins\obs-1394-dv-capture\locale\en-US.ini
 
 After installing
 ----------------
@@ -64,4 +64,4 @@ The device is released automatically when the source is not visible in any
 active scene (so other capture software can use it).
 
 If the source stays black, check Help -> Log Files -> View Current Log for
-lines starting with "[obs-dv-capture]".
+lines starting with "[obs-1394-dv-capture]".

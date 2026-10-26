@@ -278,17 +278,25 @@ void DshowCapture::SetError(const char *msg, HRESULT hr) {
     snprintf(buf, sizeof(buf), "%s (HRESULT 0x%08lX)", msg,
              static_cast<unsigned long>(hr));
     lastError_ = buf;
+    Log(lastError_);
+}
+
+void DshowCapture::Log(const std::string &msg) {
+    if (logCb_)
+        logCb_(msg);
 }
 
 bool DshowCapture::Start(const std::string &monikerPathUtf8,
                          bool captureAudio,
                          VideoCallback videoCb,
-                         AudioCallback audioCb) {
+                         AudioCallback audioCb,
+                         LogCallback logCb) {
     if (running_.load())
         return false;
     lastError_.clear();
     userVideoCb_ = std::move(videoCb);
     userAudioCb_ = std::move(audioCb);
+    logCb_ = std::move(logCb);
     stopRequested_ = false;
     thread_ = std::thread(&DshowCapture::CaptureThread, this,
                           Utf8ToWide(monikerPathUtf8), captureAudio);
@@ -359,6 +367,7 @@ void DshowCapture::Teardown() {
     SafeRelease(videoNullRenderer_);
     SafeRelease(audioGrabberFilter_);
     SafeRelease(audioNullRenderer_);
+    SafeRelease(dvSplitter_);
     SafeRelease(sourceFilter_);
     SafeRelease(mediaEvent_);
     SafeRelease(control_);
@@ -385,6 +394,12 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
         SetError(msg, code);
         running_ = false;
         SetEvent(stopEvent);
+    };
+    auto logResult = [&](const char *step, HRESULT result) {
+        char buf[256];
+        snprintf(buf, sizeof(buf), "%s (HRESULT 0x%08lX)", step,
+                 static_cast<unsigned long>(result));
+        Log(buf);
     };
 
     HRESULT hr;
@@ -434,7 +449,39 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
             break;
         }
 
-        // ----- Video branch: DV source -> [DV splitter/decoder] ->
+        // ----- Shared DV Splitter -----
+        // MSDV exposes an interleaved DV stream, not a separate audio pin.
+        // Create the splitter explicitly so both decoded video and embedded
+        // PCM audio are rendered from the same splitter instance.
+        hr = CoCreateInstance(CLSID_DVSplitter, nullptr,
+                              CLSCTX_INPROC_SERVER,
+                              PPV(IBaseFilter, &dvSplitter_));
+        if (FAILED(hr)) {
+            fail("Cannot create DV Splitter", hr);
+            break;
+        }
+        hr = graph_->AddFilter(dvSplitter_, L"DV Splitter");
+        if (FAILED(hr)) {
+            fail("Cannot add DV Splitter to graph", hr);
+            break;
+        }
+
+        hr = captureGraph_->RenderStream(
+            &PIN_CATEGORY_PREVIEW, &MEDIATYPE_Interleaved, sourceFilter_,
+            dvSplitter_, nullptr);
+        logResult("DV source -> DV Splitter preview RenderStream", hr);
+        if (FAILED(hr)) {
+            hr = captureGraph_->RenderStream(
+                &PIN_CATEGORY_CAPTURE, &MEDIATYPE_Interleaved, sourceFilter_,
+                dvSplitter_, nullptr);
+            logResult("DV source -> DV Splitter capture RenderStream", hr);
+        }
+        if (FAILED(hr)) {
+            fail("Cannot connect DV source to DV Splitter", hr);
+            break;
+        }
+
+        // ----- Video branch: DV Splitter -> DV Video Decoder ->
         //                    SampleGrabber -> NullRenderer -----
         hr = CoCreateInstance(CLSID_SampleGrabber, nullptr,
                               CLSCTX_INPROC_SERVER,
@@ -473,18 +520,12 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
         }
         graph_->AddFilter(videoNullRenderer_, L"DV Video Null");
 
-        // PREVIEW is the classic category for DV camcorders; fall back to
-        // CAPTURE if the device does not expose a preview pin.
-        hr = captureGraph_->RenderStream(&PIN_CATEGORY_PREVIEW,
-                                         &MEDIATYPE_Video, sourceFilter_,
-                                         videoGrabberFilter_,
+        // Start at the splitter's video output; RenderStream inserts the
+        // system DV Video Decoder before the YUY2 SampleGrabber.
+        hr = captureGraph_->RenderStream(nullptr, &MEDIATYPE_Video,
+                                         dvSplitter_, videoGrabberFilter_,
                                          videoNullRenderer_);
-        if (FAILED(hr)) {
-            hr = captureGraph_->RenderStream(&PIN_CATEGORY_CAPTURE,
-                                             &MEDIATYPE_Video, sourceFilter_,
-                                             videoGrabberFilter_,
-                                             videoNullRenderer_);
-        }
+        logResult("DV Splitter -> video RenderStream", hr);
         if (FAILED(hr)) {
             fail("Cannot build DV video graph (DV decoder missing?)", hr);
             break;
@@ -503,12 +544,25 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
                     videoCallback_->width = vih->bmiHeader.biWidth;
                     videoCallback_->height =
                         std::abs(vih->bmiHeader.biHeight);
-                    videoCallback_->topDown = vih->bmiHeader.biHeight < 0;
+                    // The real MSDV/qdvd DV path observed on the target
+                    // camcorder delivers rows opposite to the usual DIB sign
+                    // convention. Positive biHeight is top-down here; using
+                    // the generic DIB rule produced an upside-down image.
+                    videoCallback_->topDown = vih->bmiHeader.biHeight > 0;
                     videoCallback_->averageFrameTime =
                         vih->AvgTimePerFrame > 0
                             ? vih->AvgTimePerFrame
                             : static_cast<REFERENCE_TIME>(400000);
                     videoCallback_->haveFormat = true;
+                    char formatLog[192];
+                    snprintf(formatLog, sizeof(formatLog),
+                             "video: connected %ldx%ld YUY2, biHeight=%ld, %s",
+                             static_cast<long>(vih->bmiHeader.biWidth),
+                             static_cast<long>(vih->bmiHeader.biHeight),
+                             static_cast<long>(vih->bmiHeader.biHeight),
+                             videoCallback_->topDown ? "top-down" :
+                                                       "bottom-up");
+                    Log(formatLog);
                 }
             }
             if (connectedVideo.pbFormat)
@@ -521,13 +575,18 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
             break;
         }
 
-        // ----- Audio branch (optional) -----
+        // ----- Audio branch (optional): DV Splitter -> SampleGrabber -----
         bool audioOk = false;
         if (captureAudio && userAudioCb_) {
-            hr = CoCreateInstance(CLSID_SampleGrabber, nullptr,
-                                  CLSCTX_INPROC_SERVER,
-                                  PPV(ISampleGrabber, &audioGrabber_));
-            if (SUCCEEDED(hr)) {
+            do {
+                hr = CoCreateInstance(CLSID_SampleGrabber, nullptr,
+                                      CLSCTX_INPROC_SERVER,
+                                      PPV(ISampleGrabber, &audioGrabber_));
+                if (FAILED(hr)) {
+                    logResult("audio: cannot create SampleGrabber", hr);
+                    break;
+                }
+
                 AM_MEDIA_TYPE audioMt;
                 ZeroMemory(&audioMt, sizeof(audioMt));
                 audioMt.majortype = MEDIATYPE_Audio;
@@ -540,67 +599,99 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
                 audioCallback_->audioCb = &userAudioCb_;
                 audioGrabber_->SetCallback(audioCallback_, 0);
 
-                HRESULT hrQ = audioGrabber_->QueryInterface(
+                hr = audioGrabber_->QueryInterface(
                     PPV(IBaseFilter, &audioGrabberFilter_));
-                if (FAILED(hrQ)) {
-                    audioOk = false;
-                } else {
-                graph_->AddFilter(audioGrabberFilter_, L"DV Audio Grabber");
+                if (FAILED(hr)) {
+                    logResult("audio: cannot query grabber filter", hr);
+                    break;
+                }
+                hr = graph_->AddFilter(audioGrabberFilter_,
+                                       L"DV Audio Grabber");
+                if (FAILED(hr)) {
+                    logResult("audio: cannot add SampleGrabber", hr);
+                    break;
+                }
 
-                CoCreateInstance(CLSID_NullRenderer, nullptr,
-                                 CLSCTX_INPROC_SERVER,
-                                 PPV(IBaseFilter,
-                                             &audioNullRenderer_));
-                if (audioNullRenderer_)
-                    graph_->AddFilter(audioNullRenderer_,
-                                      L"DV Audio Null");
+                hr = CoCreateInstance(CLSID_NullRenderer, nullptr,
+                                      CLSCTX_INPROC_SERVER,
+                                      PPV(IBaseFilter,
+                                                  &audioNullRenderer_));
+                if (FAILED(hr)) {
+                    logResult("audio: cannot create NullRenderer", hr);
+                    break;
+                }
+                hr = graph_->AddFilter(audioNullRenderer_, L"DV Audio Null");
+                if (FAILED(hr)) {
+                    logResult("audio: cannot add NullRenderer", hr);
+                    break;
+                }
 
-                HRESULT hrA = captureGraph_->RenderStream(
-                    &PIN_CATEGORY_PREVIEW, &MEDIATYPE_Audio, sourceFilter_,
+                // Do not request audio from sourceFilter_: MSDV only exposes
+                // interleaved DV. The splitter owns the actual audio output.
+                hr = captureGraph_->RenderStream(
+                    nullptr, &MEDIATYPE_Audio, dvSplitter_,
                     audioGrabberFilter_, audioNullRenderer_);
-                if (FAILED(hrA))
-                    hrA = captureGraph_->RenderStream(
-                        &PIN_CATEGORY_CAPTURE, &MEDIATYPE_Audio,
-                        sourceFilter_, audioGrabberFilter_,
-                        audioNullRenderer_);
+                logResult("DV Splitter -> audio RenderStream", hr);
+                if (FAILED(hr))
+                    break;
 
-                if (SUCCEEDED(hrA)) {
-                    AM_MEDIA_TYPE connectedAudio;
-                    ZeroMemory(&connectedAudio, sizeof(connectedAudio));
-                    if (SUCCEEDED(audioGrabber_->GetConnectedMediaType(
-                            &connectedAudio))) {
-                        if (connectedAudio.formattype ==
-                                FORMAT_WaveFormatEx &&
-                            connectedAudio.cbFormat >=
-                                sizeof(WAVEFORMATEX)) {
-                            WAVEFORMATEX *wf =
-                                reinterpret_cast<WAVEFORMATEX *>(
-                                    connectedAudio.pbFormat);
-                            // DV embedded audio is 16-bit PCM; anything else
-                            // is rejected rather than misinterpreted.
-                            if (wf->wBitsPerSample == 16) {
-                                audioCallback_->channels =
-                                    static_cast<int>(wf->nChannels);
-                                audioCallback_->samplesPerSec =
-                                    static_cast<int>(wf->nSamplesPerSec);
-                                audioCallback_->bitsPerSample =
-                                    static_cast<int>(wf->wBitsPerSample);
-                                audioCallback_->haveFormat = true;
-                                audioOk = true;
-                            }
-                        }
-                        if (connectedAudio.pbFormat)
-                            CoTaskMemFree(connectedAudio.pbFormat);
-                        if (connectedAudio.pUnk)
-                            connectedAudio.pUnk->Release();
+                AM_MEDIA_TYPE connectedAudio;
+                ZeroMemory(&connectedAudio, sizeof(connectedAudio));
+                hr = audioGrabber_->GetConnectedMediaType(&connectedAudio);
+                if (FAILED(hr)) {
+                    logResult("audio: GetConnectedMediaType", hr);
+                    break;
+                }
+                if (connectedAudio.formattype == FORMAT_WaveFormatEx &&
+                    connectedAudio.cbFormat >= sizeof(WAVEFORMATEX)) {
+                    WAVEFORMATEX *wf =
+                        reinterpret_cast<WAVEFORMATEX *>(
+                            connectedAudio.pbFormat);
+                    // DV embedded audio is 16-bit PCM on this capture path.
+                    if (wf->wBitsPerSample == 16 &&
+                        (wf->nChannels == 1 || wf->nChannels == 2) &&
+                        wf->nSamplesPerSec > 0) {
+                        audioCallback_->channels =
+                            static_cast<int>(wf->nChannels);
+                        audioCallback_->samplesPerSec =
+                            static_cast<int>(wf->nSamplesPerSec);
+                        audioCallback_->bitsPerSample =
+                            static_cast<int>(wf->wBitsPerSample);
+                        audioCallback_->haveFormat = true;
+                        audioOk = true;
+
+                        char formatLog[160];
+                        snprintf(formatLog, sizeof(formatLog),
+                                 "audio: connected %lu Hz, %u channels, "
+                                 "%u-bit PCM",
+                                 static_cast<unsigned long>(
+                                     wf->nSamplesPerSec),
+                                 static_cast<unsigned>(wf->nChannels),
+                                 static_cast<unsigned>(wf->wBitsPerSample));
+                        Log(formatLog);
+                    } else {
+                        Log("audio: unsupported format (need mono/stereo "
+                            "16-bit PCM)");
                     }
+                } else {
+                    Log("audio: connected format is not WAVEFORMATEX");
                 }
-                }
-            }
-            // Audio is best-effort: the video stream is the primary deliverable.
+                if (connectedAudio.pbFormat)
+                    CoTaskMemFree(connectedAudio.pbFormat);
+                if (connectedAudio.pUnk)
+                    connectedAudio.pUnk->Release();
+            } while (false);
+
+            // Audio is best-effort, but never fail silently: the exact graph
+            // error above is visible in the OBS log while video continues.
             if (!audioOk) {
+                Log("audio: embedded DV audio capture unavailable");
                 if (audioGrabber_)
                     audioGrabber_->SetCallback(nullptr, 0);
+                if (audioGrabberFilter_)
+                    graph_->RemoveFilter(audioGrabberFilter_);
+                if (audioNullRenderer_)
+                    graph_->RemoveFilter(audioNullRenderer_);
                 SafeRelease(audioCallback_);
                 SafeRelease(audioGrabber_);
                 SafeRelease(audioGrabberFilter_);

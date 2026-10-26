@@ -7,7 +7,7 @@ project(${_name} VERSION ${_version})
 # IEEE-1394 DV capture is implemented through DirectShow, which is
 # Windows-only.
 if(NOT WIN32)
-  message(FATAL_ERROR "obs-dv-capture supports Windows only (DirectShow).")
+  message(FATAL_ERROR "obs-1394-dv-capture supports Windows only (DirectShow).")
 endif()
 
 include(compilerconfig)

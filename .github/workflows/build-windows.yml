@@ -29,7 +29,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: obs-dv-capture-${{ github.sha }}
+          name: obs-1394-dv-capture-${{ github.sha }}
           path: release/*.zip
 
       - name: Publish GitHub Release

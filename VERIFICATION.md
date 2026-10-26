@@ -9,7 +9,7 @@
 | DirectShow 采集引擎编译 | `x86_64-w64-mingw32-g++-posix -std=c++17 -Wall` | 通过 |
 | DirectShow 采集引擎链接 | 链接为真实 Windows PE 程序，`-lstrmiids -lole32 -loleaut32` | 通过，全部 GUID/COM 符号解析 |
 | OBS 接入层编译 | 使用真实 **OBS 30.1.2 官方 libobs 头文件** | 通过 |
-| 插件 DLL 链接 | 链接为 `obs-dv-capture.dll`（libobs 部分用空桩，仅验证符号与模块结构） | 通过 |
+| 插件 DLL 链接 | 链接为 `obs-1394-dv-capture.dll`（libobs 部分用空桩，仅验证符号与模块结构） | 通过 |
 | 模块导出表检查 | `objdump` 检查导出 | 正确导出 `obs_module_load` / `obs_module_unload` / `obs_module_ver` / `obs_module_text` 等 OBS 模块入口 |
 | DLL 运行时依赖 | `objdump -p` | 仅依赖系统自带 `kernel32/ole32/oleaut32`，无第三方运行时 |
 
@@ -31,10 +31,8 @@
 | 验证项 | 结果 |
 |---|---|
 | MSVC `/W3` + `/permissive-` + `/Zc:preprocessor` 编译（警告即错误 `/WX`） | 通过，无告警 |
-| 链接真实 `OBS::libobs` | 通过，生成 `obs-dv-capture.dll` |
-| 打包 `obs-dv-capture-0.1.0-windows-x64.zip` | 结构为 `obs-dv-capture/bin/64bit/obs-dv-capture.dll`、`.../obs-dv-capture.pdb`、`obs-dv-capture/data/locale/en-US.ini` |
-
-## 三、真机验证清单（用户 Windows 电脑，1394 摄像机）
+| 链接真实 `OBS::libobs` | 通过，生成 `obs-1394-dv-capture.dll` |
+| 打包 `obs-1394-dv-capture-0.1.0-windows-x64.zip` | 结构为 `obs-1394-dv-capture/bin/64bit/obs-1394-dv-capture.dll`、`.../obs-1394-dv-capture.pdb`、`obs-1394-dv-capture/data/locale/en-US.ini` |
 
 ## 三、真机验证清单（用户 Windows 电脑，1394 摄像机）
 
@@ -43,7 +41,7 @@
 3. 激活后 30 秒内出画面（PAL 720×576 / NTSC 720×480）。
 4. 混音器出现 DV 音频电平。
 5. 录制 30 秒后回放，检查 A/V 同步。
-6. 查看 `帮助 → 日志文件 → 当前日志`，确认无 `[obs-dv-capture]` 警告。
+6. 查看 `帮助 → 日志文件 → 当前日志`，确认无 `[obs-1394-dv-capture]` 警告。
 7. 拔插 1394 线，日志应出现 `DV device lost`；重新插回后重新激活源可恢复。
 
 ## 四、真机测试发现与修复
@@ -59,3 +57,11 @@
   `CoCreateInstance` 拿接口 IID 去找类，自然找不到。已交换修正，4 个 GUID 经字节序与微软官方资料逐一核对。
   这同样是运行时错误，编译/链接/CI 均无法发现。
 - 同时让枚举把真正的 1394 DV 设备（moniker 路径含 `avc#`/`camcorder`/`&dv`）排在列表最前，避免默认选中 Corel 等软件虚拟摄像头。
+
+## 五、phase1rc0 画面方向与内嵌音频修复
+
+- 项目及产物名称统一为 `obs-1394-dv-capture`。
+- 针对 rc3 真机画面上下颠倒，反转 MSDV/qdvd 路径的行方向判断；仅翻转垂直方向，不做水平镜像。
+- 显式创建一个共享的 DV Splitter：摄像机先以 `MEDIATYPE_Interleaved` 连接到 Splitter，视频与音频再分别从 Splitter 调用 `RenderStream`。不再错误地从摄像机 MSDV 源直接请求独立音频流。
+- 新增源到 Splitter、Splitter 到视频、Splitter 到音频的 HRESULT 日志，以及已连接的视频 `biHeight`、音频采样率/声道/位深日志。音频失败保持视频可用，但不再静默失败。
+- 真机验收时应看到 `DV Splitter -> audio RenderStream (HRESULT 0x00000000)`、`audio: connected ... 16-bit PCM`，混音器有电平；画面上下方向正常且左右未镜像。

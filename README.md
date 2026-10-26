@@ -1,4 +1,4 @@
-# obs-dv-capture
+# obs-1394-dv-capture
 
 OBS Studio 采集源插件，用于通过 **IEEE-1394（FireWire/火线）** 采集老式磁带 DV 摄像机（如 Panasonic AG-DVC180 等“Microsoft DV Camera and VCR”设备），在 OBS 中直接得到 **DVSD 解码后的 YUY2 画面和内嵌 PCM 音频**。
 
@@ -19,7 +19,7 @@ DV 摄像机 (Microsoft DV Camera and VCR)
         └──────► OBS（视频 YUY2 / 音频 16bit PCM）
 ```
 
-OBS 内置的“视频采集设备”源在某些 DV 设备上不能正确插入 DV Splitter / DV Video Decoder，滤镜图只拿到未解码的 DVSD 流，于是表现为黑屏（PotPlayer 能播、OBS 黑屏）。本插件使用 `ICaptureGraphBuilder2::RenderStream` 构建完整滤镜图，强制完成解码后再把帧交给 OBS。
+OBS 内置的“视频采集设备”源在某些 DV 设备上不能正确插入 DV Splitter / DV Video Decoder，滤镜图只拿到未解码的 DVSD 流，于是表现为黑屏（PotPlayer 能播、OBS 黑屏）。本插件显式创建共享的 DV Splitter，再使用 `ICaptureGraphBuilder2::RenderStream` 分别构建视频与音频分支，强制完成解码后再把帧交给 OBS。
 
 ## 功能
 
@@ -35,9 +35,9 @@ OBS 内置的“视频采集设备”源在某些 DV 设备上不能正确插入
 
 > 完整图文步骤见压缩包内的 `INSTALL.txt`。
 
-1. 从 [Releases](https://github.com/Tiaiceg/obs-dv-capture/releases) 下载 `obs-dv-capture-*-windows-x64.zip`。
-2. 解压得到 `obs-dv-capture` 文件夹，整体复制到 `C:\ProgramData\obs-studio\plugins\`（地址栏可直接粘贴 `%PROGRAMDATA%\obs-studio\plugins`，没有 plugins 文件夹就新建；可能需要管理员授权）。
-   最终为 `C:\ProgramData\obs-studio\plugins\obs-dv-capture\bin\64bit\obs-dv-capture.dll`。
+1. 从 [Releases](https://github.com/Tiaiceg/obs-1394-dv-capture/releases) 下载 `obs-1394-dv-capture-*-windows-x64.zip`。
+2. 解压得到 `obs-1394-dv-capture` 文件夹，整体复制到 `C:\ProgramData\obs-studio\plugins\`（地址栏可直接粘贴 `%PROGRAMDATA%\obs-studio\plugins`，没有 plugins 文件夹就新建；可能需要管理员授权）。
+   最终为 `C:\ProgramData\obs-studio\plugins\obs-1394-dv-capture\bin\64bit\obs-1394-dv-capture.dll`。
    > Windows 下 OBS **不会**扫描 `%APPDATA%\Roaming\obs-studio\plugins`（那是 Linux/macOS 的路径），请用 ProgramData。
 3. 完全退出 OBS（含系统托盘）后重新启动，在“来源”中添加 **DV/1394 FireWire Capture**。
 
@@ -53,8 +53,8 @@ OBS 内置的“视频采集设备”源在某些 DV 设备上不能正确插入
 需要 Windows + Visual Studio 2022（含 C++ 桌面开发）、CMake ≥ 3.28。
 
 ```bat
-git clone https://github.com/Tiaiceg/obs-dv-capture.git
-cd obs-dv-capture
+git clone https://github.com/Tiaiceg/obs-1394-dv-capture.git
+cd obs-1394-dv-capture
 cmake --preset windows-x64
 cmake --build --preset windows-x64 --config RelWithDebInfo
 cmake --install build_x64 --prefix release --config RelWithDebInfo
@@ -73,7 +73,7 @@ cmake --install build_x64 --prefix release --config RelWithDebInfo
 | 3 | 激活源后画面区 | 出现实时 YUY2 画面，无黑屏 |
 | 4 | 右键源 → 属性 → 分辨率 | 720×576（PAL）/ 720×480（NTSC） |
 | 5 | OBS 混音器 | 出现 DV 摄像机音频电平 |
-| 6 | 日志（帮助 → 日志文件 → 查看当前日志） | 无 `[obs-dv-capture]` 警告 |
+| 6 | 日志（帮助 → 日志文件 → 查看当前日志） | 无 `[obs-1394-dv-capture]` 警告 |
 | 7 | 拔插 1394 线 | 日志记录 `DV device lost`，重新插回后重新激活源可恢复 |
 
 ## 故障排查
