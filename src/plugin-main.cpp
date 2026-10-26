@@ -34,6 +34,7 @@ struct DvSource {
     std::string devicePath;
     bool captureAudio = true;
     bool active = false;
+    bool loggedFormat = false;
 
     // Ring of owned buffers so a frame handed to libobs stays valid until
     // it has been consumed. DirectShow callbacks and the OBS async video
@@ -78,7 +79,7 @@ struct DvSource {
         out.format = VIDEO_FORMAT_YUY2;
         out.width = static_cast<uint32_t>(frame.width);
         out.height = static_cast<uint32_t>(frame.height);
-        out.linesize[0] = rowBytes;
+        out.linesize[0] = static_cast<uint32_t>(rowBytes);
         out.data[0] = slot.data();
         out.timestamp = frame.timestampNs;
         // DV standard definition is BT.601, limited range.
@@ -87,6 +88,13 @@ struct DvSource {
                                     out.color_matrix, out.color_range_min,
                                     out.color_range_max);
         obs_source_output_video(source, &out);
+
+        if (!loggedFormat) {
+            loggedFormat = true;
+            blog(LOG_INFO,
+                 "[obs-dv-capture] video: %dx%d YUY2 (BT.601, limited range)",
+                 frame.width, frame.height);
+        }
     }
 
     void OnAudio(const dvcap::DvAudioFrame &frame) {
@@ -140,11 +148,16 @@ struct DvSource {
 
         bool ok = capture->Start(devicePath, captureAudio, videoCb,
                                  audioCb);
-        if (!ok) {
+        if (ok) {
+            blog(LOG_INFO,
+                 "[obs-dv-capture] capture started for '%s' (audio=%s)",
+                 devicePath.c_str(), captureAudio ? "on" : "off");
+        } else {
             blog(LOG_WARNING,
                  "[obs-dv-capture] failed to start DV capture on '%s': %s",
                  devicePath.c_str(),
                  capture ? capture->lastError().c_str() : "unknown error");
+            capture.reset();
         }
     }
 

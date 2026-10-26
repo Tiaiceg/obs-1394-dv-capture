@@ -24,10 +24,17 @@
 
 > 云电脑构建出的 dll 含空桩，**不能用于真实 OBS**；真实产物以 GitHub Actions 的 Windows/MSVC 构建为准。
 
-## 二、待 GitHub Actions 验证（Windows 构建机）
+## 二、GitHub Actions 真实 MSVC 构建（已通过）
 
-- MSVC 编译、链接真实 `OBS::libobs`（CI 自动拉取 OBS 30.1.2 源码）
-- 产出 `obs-dv-capture-*-windows-x64.zip`，挂到 Release
+工作流在 `windows-2022` 上使用 Visual Studio 2022 + 官方 OBS 插件模板，链接真实 **OBS 31.1.1 libobs**：
+
+| 验证项 | 结果 |
+|---|---|
+| MSVC `/W3` + `/permissive-` + `/Zc:preprocessor` 编译（警告即错误 `/WX`） | 通过，无告警 |
+| 链接真实 `OBS::libobs` | 通过，生成 `obs-dv-capture.dll` |
+| 打包 `obs-dv-capture-0.1.0-windows-x64.zip` | 结构为 `obs-dv-capture/bin/64bit/obs-dv-capture.dll`、`.../obs-dv-capture.pdb`、`obs-dv-capture/data/locale/en-US.ini` |
+
+## 三、真机验证清单（用户 Windows 电脑，1394 摄像机）
 
 ## 三、真机验证清单（用户 Windows 电脑，1394 摄像机）
 

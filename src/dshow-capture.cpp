@@ -555,11 +555,11 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
                             // is rejected rather than misinterpreted.
                             if (wf->wBitsPerSample == 16) {
                                 audioCallback_->channels =
-                                    wf->nChannels;
+                                    static_cast<int>(wf->nChannels);
                                 audioCallback_->samplesPerSec =
-                                    wf->nSamplesPerSec;
+                                    static_cast<int>(wf->nSamplesPerSec);
                                 audioCallback_->bitsPerSample =
-                                    wf->wBitsPerSample;
+                                    static_cast<int>(wf->wBitsPerSample);
                                 audioCallback_->haveFormat = true;
                                 audioOk = true;
                             }
