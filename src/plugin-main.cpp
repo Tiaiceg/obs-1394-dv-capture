@@ -6,6 +6,7 @@
 
 #include <obs-module.h>
 
+#include <array>
 #include <atomic>
 #include <memory>
 #include <string>
@@ -16,6 +17,12 @@
 #define PLUGIN_NAME "obs-1394-dv-capture"
 #define SETTING_DEVICE "device_id"
 #define SETTING_AUDIO "capture_audio"
+#define SETTING_CAMERA_ZOOM "camera_zoom"
+#define SETTING_CAMERA_FOCUS "camera_focus"
+#define SETTING_CAMERA_IRIS "camera_iris"
+#define SETTING_CAMERA_ZOOM_AUTO "camera_zoom_auto"
+#define SETTING_CAMERA_FOCUS_AUTO "camera_focus_auto"
+#define SETTING_CAMERA_IRIS_AUTO "camera_iris_auto"
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
@@ -28,6 +35,28 @@ const char *Tr(const char *key) {
     return obs_module_text(key);
 }
 
+struct CameraUiBinding {
+    dvcap::CameraProperty property;
+    const char *valueKey;
+    const char *autoKey;
+    const char *labelKey;
+    const char *autoLabelKey;
+};
+
+static const std::array<CameraUiBinding, 3> cameraBindings = {{
+    {dvcap::CameraProperty::Zoom, SETTING_CAMERA_ZOOM,
+     SETTING_CAMERA_ZOOM_AUTO, "CameraZoom", "CameraAuto"},
+    {dvcap::CameraProperty::Focus, SETTING_CAMERA_FOCUS,
+     SETTING_CAMERA_FOCUS_AUTO, "CameraFocus", "CameraAuto"},
+    {dvcap::CameraProperty::Iris, SETTING_CAMERA_IRIS,
+     SETTING_CAMERA_IRIS_AUTO, "CameraIris", "CameraAuto"},
+}};
+
+struct CameraSettingState {
+    long value = 0;
+    bool automatic = false;
+};
+
 struct DvSource {
     obs_source_t *source = nullptr;
     std::unique_ptr<dvcap::DshowCapture> capture;
@@ -35,6 +64,7 @@ struct DvSource {
     bool captureAudio = true;
     bool active = false;
     bool loggedFormat = false;
+    std::array<CameraSettingState, 3> cameraSettings{};
 
     // Ring of owned buffers so a frame handed to libobs stays valid until
     // it has been consumed. DirectShow callbacks and the OBS async video
@@ -198,6 +228,12 @@ static void *Create(obs_data_t *settings, obs_source_t *source) {
 
     s->devicePath = obs_data_get_string(settings, SETTING_DEVICE);
     s->captureAudio = obs_data_get_bool(settings, SETTING_AUDIO);
+    for (size_t i = 0; i < cameraBindings.size(); ++i) {
+        s->cameraSettings[i].value = static_cast<long>(
+            obs_data_get_int(settings, cameraBindings[i].valueKey));
+        s->cameraSettings[i].automatic =
+            obs_data_get_bool(settings, cameraBindings[i].autoKey);
+    }
 
     // Fall back to the first available device if the stored setting is empty
     // (e.g. the source was created before the camcorder was plugged in).
@@ -239,6 +275,30 @@ static void Update(void *data, obs_data_t *settings) {
         if (s->active)
             s->StartCapture();
     }
+
+    // Apply only properties actually changed by the user. In particular,
+    // merely activating a source must never move the lens to default values.
+    for (size_t i = 0; i < cameraBindings.size(); ++i) {
+        const auto &binding = cameraBindings[i];
+        const long value = static_cast<long>(
+            obs_data_get_int(settings, binding.valueKey));
+        const bool automatic = obs_data_get_bool(settings, binding.autoKey);
+        auto &previous = s->cameraSettings[i];
+        if (value == previous.value && automatic == previous.automatic)
+            continue;
+
+        previous.value = value;
+        previous.automatic = automatic;
+        if (s->active && s->capture) {
+            if (!s->capture->SetCameraProperty(binding.property, value,
+                                               automatic)) {
+                blog(LOG_WARNING,
+                     "[" PLUGIN_NAME
+                     "] camera control '%s' is not available",
+                     binding.valueKey);
+            }
+        }
+    }
 }
 
 static void FillDeviceList(obs_property_t *prop) {
@@ -254,7 +314,8 @@ static bool RefreshDevices(obs_properties_t *, obs_property_t *prop, void *) {
     return true;
 }
 
-static obs_properties_t *GetProperties(void *) {
+static obs_properties_t *GetProperties(void *data) {
+    auto *s = static_cast<DvSource *>(data);
     obs_properties_t *props = obs_properties_create();
 
     obs_property_t *device = obs_properties_add_list(
@@ -266,6 +327,40 @@ static obs_properties_t *GetProperties(void *) {
                               RefreshDevices);
 
     obs_properties_add_bool(props, SETTING_AUDIO, Tr("CaptureAudio"));
+
+    obs_properties_t *camera = obs_properties_create();
+    const bool haveCapture = s && s->capture && s->capture->running();
+    const auto capabilities = haveCapture
+                                  ? s->capture->CameraProperties()
+                                  : std::array<dvcap::CameraPropertyInfo, 3>{};
+    bool anySupported = false;
+    for (const auto &info : capabilities)
+        anySupported = anySupported || info.supported;
+
+    const char *status = !haveCapture
+                             ? Tr("CameraStatusInactive")
+                             : anySupported ? Tr("CameraStatusReady")
+                                            : Tr("CameraStatusUnavailable");
+    obs_properties_add_text(camera, "camera_status", status, OBS_TEXT_INFO);
+
+    for (size_t i = 0; i < cameraBindings.size(); ++i) {
+        const auto &binding = cameraBindings[i];
+        const auto &info = capabilities[i];
+        const int minimum = info.supported ? static_cast<int>(info.minimum) : 0;
+        const int maximum = info.supported ? static_cast<int>(info.maximum) : 100;
+        const int step = info.supported ? static_cast<int>(info.step) : 1;
+
+        obs_property_t *value = obs_properties_add_int_slider(
+            camera, binding.valueKey, Tr(binding.labelKey), minimum, maximum,
+            step);
+        obs_property_set_enabled(value, info.supported && info.manualSupported);
+
+        obs_property_t *automatic = obs_properties_add_bool(
+            camera, binding.autoKey, Tr(binding.autoLabelKey));
+        obs_property_set_enabled(automatic, info.supported && info.autoSupported);
+    }
+    obs_properties_add_group(props, "group_camera", Tr("CameraControl"),
+                             OBS_GROUP_NORMAL, camera);
 
     obs_properties_t *advanced = obs_properties_create();
     obs_properties_add_text(advanced, "hint",

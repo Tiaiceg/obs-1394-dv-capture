@@ -79,3 +79,11 @@
 - 改为显式创建 DV Splitter 和 DV Video Decoder，并使用微软 DV 图参数顺序 `RenderStream(..., source, nullptr, splitter)` 连接交错流。
 - 视频按 `DV Splitter -> DV Video Decoder -> video SampleGrabber -> NullRenderer` 连接；音频按 `DV Splitter -> audio SampleGrabber -> NullRenderer` 连接。
 - phase1rc0 的回归还在于把 Splitter 错放在 intermediate 参数并把 sink 留空；本版使用 splitter 作为 sink，避免只得到 `VFW_S_PARTIAL_RENDER`。
+
+## 八、0.2.0-camera1rc0 CAMERA 控制实验版
+
+- 新增 `IAMCameraControl` 能力检测，覆盖 Zoom、Focus、Iris 的范围、步长、默认值、当前值和自动／手动标志。
+- 属性页只启用设备声明支持的控制项；不包含 VCR 走带或 REC。
+- 控制命令通过队列交由采集线程执行，避免 OBS UI 线程直接使用采集线程的 COM 接口。
+- 仅用户改变设置时发送命令，激活来源时不主动调整镜头。
+- 真机重点检查日志是否出现 `camera: zoom/focus/iris range ...`；若出现 `IAMCameraControl unavailable`，则当前 MSDV 路径不支持该控制接口。

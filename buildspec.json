@@ -38,7 +38,7 @@
     },
     "name": "obs-1394-dv-capture",
     "displayName": "DV/1394 FireWire Capture",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "author": "Tiaiceg",
     "website": "https://github.com/Tiaiceg/obs-1394-dv-capture",
     "email": ""

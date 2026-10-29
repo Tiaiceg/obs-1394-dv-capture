@@ -320,6 +320,131 @@ void DshowCapture::Stop() {
         thread_.join();
 }
 
+static size_t CameraIndex(CameraProperty property) {
+    return static_cast<size_t>(property);
+}
+
+static const char *CameraName(CameraProperty property) {
+    switch (property) {
+    case CameraProperty::Zoom:
+        return "zoom";
+    case CameraProperty::Focus:
+        return "focus";
+    case CameraProperty::Iris:
+        return "iris";
+    }
+    return "unknown";
+}
+
+static ::CameraControlProperty DshowCameraProperty(CameraProperty property) {
+    switch (property) {
+    case CameraProperty::Zoom:
+        return ::CameraControl_Zoom;
+    case CameraProperty::Focus:
+        return ::CameraControl_Focus;
+    case CameraProperty::Iris:
+        return ::CameraControl_Iris;
+    }
+    return ::CameraControl_Zoom;
+}
+
+std::array<CameraPropertyInfo, 3> DshowCapture::CameraProperties() const {
+    std::lock_guard<std::mutex> lock(cameraMutex_);
+    return cameraProperties_;
+}
+
+bool DshowCapture::SetCameraProperty(CameraProperty property, long value,
+                                     bool automatic) {
+    if (!running_.load())
+        return false;
+    {
+        std::lock_guard<std::mutex> lock(cameraMutex_);
+        const auto &info = cameraProperties_[CameraIndex(property)];
+        if (!info.supported || (!automatic && !info.manualSupported) ||
+            (automatic && !info.autoSupported))
+            return false;
+        cameraCommands_.push_back({property, value, automatic});
+    }
+    return true;
+}
+
+void DshowCapture::RefreshCameraProperties() {
+    HRESULT hr = sourceFilter_->QueryInterface(
+        PPV(IAMCameraControl, &cameraControl_));
+    if (FAILED(hr)) {
+        char buf[192];
+        snprintf(buf, sizeof(buf),
+                 "camera: IAMCameraControl unavailable (HRESULT 0x%08lX); "
+                 "zoom/focus/iris disabled",
+                 static_cast<unsigned long>(hr));
+        Log(buf);
+        return;
+    }
+
+    const CameraProperty properties[] = {CameraProperty::Zoom,
+                                         CameraProperty::Focus,
+                                         CameraProperty::Iris};
+    for (CameraProperty property : properties) {
+        CameraPropertyInfo info;
+        long flags = 0;
+        hr = cameraControl_->GetRange(DshowCameraProperty(property),
+                                      &info.minimum, &info.maximum,
+                                      &info.step, &info.defaultValue, &flags);
+        if (FAILED(hr))
+            continue;
+
+        long currentFlags = 0;
+        if (SUCCEEDED(cameraControl_->Get(DshowCameraProperty(property),
+                                          &info.value, &currentFlags))) {
+            info.automatic = (currentFlags & CameraControl_Flags_Auto) != 0;
+        } else {
+            info.value = info.defaultValue;
+        }
+        info.supported = true;
+        info.autoSupported = (flags & CameraControl_Flags_Auto) != 0;
+        info.manualSupported = (flags & CameraControl_Flags_Manual) != 0;
+        if (info.step <= 0)
+            info.step = 1;
+        {
+            std::lock_guard<std::mutex> lock(cameraMutex_);
+            cameraProperties_[CameraIndex(property)] = info;
+        }
+
+        char buf[256];
+        snprintf(buf, sizeof(buf),
+                 "camera: %s range %ld..%ld step %ld, current %ld (%s)",
+                 CameraName(property), info.minimum, info.maximum, info.step,
+                 info.value, info.automatic ? "auto" : "manual");
+        Log(buf);
+    }
+}
+
+void DshowCapture::ProcessCameraCommands() {
+    for (;;) {
+        CameraCommand command{};
+        {
+            std::lock_guard<std::mutex> lock(cameraMutex_);
+            if (cameraCommands_.empty())
+                return;
+            command = cameraCommands_.front();
+            cameraCommands_.pop_front();
+        }
+        if (!cameraControl_)
+            continue;
+
+        HRESULT hr = cameraControl_->Set(
+            DshowCameraProperty(command.property), command.value,
+            command.automatic ? CameraControl_Flags_Auto
+                              : CameraControl_Flags_Manual);
+        char buf[224];
+        snprintf(buf, sizeof(buf), "camera: set %s=%ld %s (HRESULT 0x%08lX)",
+                 CameraName(command.property), command.value,
+                 command.automatic ? "auto" : "manual",
+                 static_cast<unsigned long>(hr));
+        Log(buf);
+    }
+}
+
 static IBaseFilter *BindMonikerDevice(IEnumMoniker *enumMoniker,
                                       const std::wstring &targetPath,
                                       IMoniker **outMoniker) {
@@ -369,6 +494,7 @@ void DshowCapture::Teardown() {
     SafeRelease(audioNullRenderer_);
     SafeRelease(dvVideoDecoder_);
     SafeRelease(dvSplitter_);
+    SafeRelease(cameraControl_);
     SafeRelease(sourceFilter_);
     SafeRelease(mediaEvent_);
     SafeRelease(control_);
@@ -449,6 +575,7 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
             fail("Cannot add DV source filter to graph", hr);
             break;
         }
+        RefreshCameraProperties();
 
         // ----- Canonical DV graph: source -> DV Splitter -> decoder -----
         // This device can connect its source directly to the video decoder,
@@ -750,6 +877,7 @@ void DshowCapture::CaptureThread(std::wstring monikerPath,
                     stopRequested_ = true;
                 }
             }
+            ProcessCameraCommands();
             WaitForSingleObject(stopEvent, 100);
         }
     } while (false);

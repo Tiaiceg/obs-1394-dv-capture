@@ -15,9 +15,12 @@
 
 #include <windows.h>
 #include <dshow.h>
+#include <array>
 #include <atomic>
 #include <cstdint>
+#include <deque>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -48,6 +51,20 @@ struct DvAudioFrame {
     const uint8_t *data = nullptr;
     size_t size = 0;
     int64_t timestampNs = 0;  // stream time, rebased to 0
+};
+
+enum class CameraProperty { Zoom = 0, Focus = 1, Iris = 2 };
+
+struct CameraPropertyInfo {
+    bool supported = false;
+    bool autoSupported = false;
+    bool manualSupported = false;
+    long minimum = 0;
+    long maximum = 0;
+    long step = 1;
+    long defaultValue = 0;
+    long value = 0;
+    bool automatic = false;
 };
 
 using VideoCallback = std::function<void(const DvVideoFrame &)>;
@@ -81,6 +98,10 @@ public:
 
     bool running() const { return running_.load(); }
 
+    std::array<CameraPropertyInfo, 3> CameraProperties() const;
+    bool SetCameraProperty(CameraProperty property, long value,
+                           bool automatic);
+
     // Last error, UTF-8.
     const std::string &lastError() const { return lastError_; }
 
@@ -90,6 +111,8 @@ private:
     void CaptureThread(std::wstring monikerPath, bool captureAudio);
     void SetError(const char *msg, HRESULT hr);
     void Log(const std::string &msg);
+    void RefreshCameraProperties();
+    void ProcessCameraCommands();
     void Teardown();
 
     std::thread thread_;
@@ -102,6 +125,7 @@ private:
     IMediaControl *control_ = nullptr;
     IMediaEventEx *mediaEvent_ = nullptr;
     IBaseFilter *sourceFilter_ = nullptr;
+    IAMCameraControl *cameraControl_ = nullptr;
     IBaseFilter *dvSplitter_ = nullptr;
     IBaseFilter *dvVideoDecoder_ = nullptr;
     IBaseFilter *videoGrabberFilter_ = nullptr;
@@ -112,6 +136,15 @@ private:
     ISampleGrabber *audioGrabber_ = nullptr;
     CallbackImpl *videoCallback_ = nullptr;
     CallbackImpl *audioCallback_ = nullptr;
+
+    struct CameraCommand {
+        CameraProperty property;
+        long value;
+        bool automatic;
+    };
+    mutable std::mutex cameraMutex_;
+    std::array<CameraPropertyInfo, 3> cameraProperties_{};
+    std::deque<CameraCommand> cameraCommands_;
 
     VideoCallback userVideoCb_;
     AudioCallback userAudioCb_;

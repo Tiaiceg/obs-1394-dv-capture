@@ -29,6 +29,7 @@ OBS 内置的“视频采集设备”源在某些 DV 设备上不能正确插入
 - 内嵌 16bit PCM 音频（32k/44.1k/48k，单/立体声自适应）
 - 源在非活动场景时自动释放独占的 1394 设备（activate/deactivate）
 - 设备丢失自动记录日志并停止采集
+- 实验性 CAMERA 控制：检测变焦、对焦、光圈及自动模式（不含 VCR 走带）
 - 无第三方运行时依赖（仅使用 Windows 自带组件）
 
 ## 安装
@@ -63,6 +64,12 @@ cmake --install build_x64 --prefix release --config RelWithDebInfo
 首次配置会自动拉取 OBS 31.1.1 源码与预编译依赖（仅链接 libobs，不使用 Qt UI）。打包脚本 `.github/scripts/Build-Windows.ps1` 与 `Package-Windows.ps1` 可一键完成构建与压缩。
 
 也可直接在 GitHub Actions 中手动触发 **Build Windows plugin** 工作流，从 Artifacts 下载编译好的 zip。
+
+## CAMERA 控制（实验性）
+
+激活来源后重新打开属性，插件会通过 `IAMCameraControl` 检测变焦、对焦和光圈能力。设备支持的控制项才会启用，范围、步长和当前值会写入 OBS 日志；仅调整属性时发送命令，启动或切换场景不会主动把镜头设为默认值。
+
+不包含 VCR 走带、时间码或磁带定位，也不默认提供 REC。若界面提示当前驱动不支持 `IAMCameraControl`，说明微软 MSDV 没有暴露这些机身控制，插件不会发送未经设备验证的厂商 AV/C 命令。
 
 ## 验证清单（真机）
 
